@@ -1,0 +1,88 @@
+networks:
+  bsw-shared:
+    name: bsw-shared
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bsw-bet-maker-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bsw_bet_maker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bsw_bet_maker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bsw-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bsw-shared
+
+  redis:
+    image: redis:7-alpine
+    container_name: bsw-bet-maker-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bet-maker:
+    container_name: bsw-bet-maker
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ../src:/src
+      - /src/.venv
+    ports:
+      - "8010:8000"
+    environment:
+      APP_NAME: bsw-bet-maker
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/bsw_bet_maker
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_EXCHANGE: events
+      RABBITMQ_EVENT_CREATED_ROUTING_KEY: event.created
+      RABBITMQ_EVENT_UPDATED_ROUTING_KEY: event.updated
+      RABBITMQ_ADD_EVENT_QUEUE: bet-maker.event.created
+      RABBITMQ_UPDATE_EVENT_STATUS_QUEUE: bet-maker.event.updated
+      LINE_PROVIDER_BASE_URL: http://host.docker.internal:8020
+      JWT_SECRET_KEY: jwt-secret-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - default
+      - bsw-shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "localhost:8000/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
