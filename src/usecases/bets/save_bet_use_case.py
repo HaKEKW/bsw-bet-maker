@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from adapters.repositories.event_redis_repository.redis_event_repository_mapper import (
     RedisEventRepositoryMapper,
@@ -26,11 +27,17 @@ class SaveBetUseCase:
         event = await self.__get_event(bet.event_id)
         if not event.is_bet_deadline_open:
             raise BetDeadlinePassedException()
+        await self.__ensure_unique_bet_id(bet)
         bet.coefficient = event.coefficient
         bet.status = BetStatus.PENDING
         bet.created_at = datetime.now()
         await self._bet_repository.save(bet)
         return bet
+
+    async def __ensure_unique_bet_id(self, bet: Bet) -> None:
+        if await self._bet_repository.get(id=bet.id) is None:
+            return
+        bet.id = uuid4()
 
     async def __get_event(self, event_id: str) -> Event:
         if (event := await self._event_repository.get(event_id)) is None:

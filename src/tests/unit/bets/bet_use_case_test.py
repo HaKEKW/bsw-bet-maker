@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -46,6 +47,26 @@ async def test_save_bet_unknown_event_raises_event_not_found(save_bet_use_case):
         await save_bet_use_case(make_bet(event_id="missing-evt", user_id="1"))
 
     assert "missing-evt" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_save_bet_regenerates_id_when_collision(
+    save_bet_use_case,
+    bet_repository,
+    line_provider: FakeLineProviderApi,
+):
+    line_provider.seed(make_event(event_id="evt-1", coefficient=2.7))
+    collision_id = uuid4()
+    existing_bet = make_bet(event_id="evt-1", user_id="existing")
+    existing_bet.id = collision_id
+    await bet_repository.save(existing_bet)
+
+    new_bet = make_bet(event_id="evt-1", user_id="new-user")
+    new_bet.id = collision_id
+    saved = await save_bet_use_case(new_bet)
+
+    assert saved.id != collision_id
+    assert saved.user_id == "new-user"
 
 
 @pytest.mark.asyncio
